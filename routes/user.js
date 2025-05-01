@@ -1,7 +1,11 @@
 const {Router} = require('express');
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 const {userModel,courseModel} = require('../db');
 const userAuthMiddleware = require('../middleware/user')
+
+const jwt_secret = process.env.JWT_SECRET;
 
 const router = new Router();
 
@@ -17,10 +21,32 @@ router.post('/signup',async (req,res)=>{
     return res.status(200).json({message:'User created successfully'});
 })
 
-router.get('/purchasedCourses',userAuthMiddleware,async (req,res)=>{
-    const {username} = req;
+router.post('/signin',async (req,res)=>{
+    const {username,password} = req.body;
+    if(!username||!password){
+        return res.status(400).json({message:'username and password is required'});
+    }
     try {
-        const user = await userModel.findOne({username}).populate('purchasedCourses').lean();
+        const user = await userModel.findOne({username}).lean();
+        if(!user){
+            return res.status(404).json({message:'user not found'});
+        }
+        if(user.password!==password){
+            return res.status(403).json({message:'incorrect credentials'});
+        }
+        const token = jwt.sign({id:user._id.toString()},jwt_secret,{expiresIn:'1d'});
+        return res.status(201).json({message:'user signin successful',token});
+    } catch (error) {
+        return res.status(500).json({message:'unknown error while searching for user identity in db',
+            error:error.message
+        });
+    }
+})
+
+router.get('/purchasedCourses',userAuthMiddleware, async (req,res)=>{
+    try {
+        // const user = req.user.lean(); .lean() cannot be called on resolved documents
+        const user = (await req.user.populate('purchasedCourses')).toObject();
         // const purchasedCourses = user.purchasedCourses.map(({_id,...rest})=>({id:_id,...rest}));// would send the .save() and extra meta data if not .lean()
         const purchasedCourses = user.purchasedCourses.map(course => {
             const { _id,...rest} = course;
@@ -40,7 +66,7 @@ router.get('/purchasedCourses',userAuthMiddleware,async (req,res)=>{
 })
 
 router.post('/courses/:courseId',userAuthMiddleware,async (req,res)=>{
-    const{username} = req;
+    const {user} = req;
     const courseId = req.params.courseId;
     try {
         const course = await courseModel.findOne({_id:courseId});
@@ -53,8 +79,6 @@ router.post('/courses/:courseId',userAuthMiddleware,async (req,res)=>{
         })
     }
     try {
-        const user = await userModel.findOne({username});
-        // Check if courseId already exists in user's purchasedCourses
         if (user.purchasedCourses.includes(courseId)) {
             return res.status(409).json({ message: 'Course already purchased' });
         }

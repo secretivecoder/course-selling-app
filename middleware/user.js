@@ -1,21 +1,26 @@
+
+require('dotenv').config();
+const jwt = require('jsonwebtoken');
 const {userModel} = require('../db');
 
+const jwt_secret = process.env.JWT_SECRET;
 
 function userMiddleware(req, res, next) { // promises used
-    // Implement user auth logic
-    // You need to check the headers and validate the user from the user DB. Check readme for the exact headers to be expected
-    const {username,password} = req.headers;
-    if(!username||!password){
-        return res.status(400).json({message:'credentials missing'});
+    if(!req.headers.authorization){
+        return res.status(404).json({message:'authorization field not found in headers'});
     }
-    userModel.findOne({username}).then((user)=>{
+    const token = req.headers.authorization.split(' ')[1];
+    try {
+        const result = jwt.verify(token,jwt_secret);
+        req.id = result.id;
+    } catch (error) {
+        return res.status(400).json({message:'invalid token',error:error.message});
+    }
+    userModel.findOne({_id:req.id}).then((user)=>{
         if(!user){
             return res.status(404).json({message:'user not found'});
         }
-        if(user.password!==password){
-            return res.status(403).json({message:'password is incorrect for the current user'});
-        }
-        req.username = username;
+        req.user = user;
         next();
     })
     .catch((error)=>{

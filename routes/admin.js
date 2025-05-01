@@ -1,8 +1,12 @@
 const {Router}  = require('express');
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 const {adminModel} = require('../db');
 const {courseModel} = require('../db');
 const {adminAuthMiddleware} = require('../middleware/admin');
+
+const jwt_secret = process.env.JWT_SECRET;
 
 const router = new Router();
 
@@ -17,6 +21,26 @@ router.post('/signup',async (req,res)=>{
         });
     }
     return res.status(201).json({message:'admin created successfully'});
+})
+
+router.post('/signin',async (req,res)=>{
+    const {username,password} = req.body;
+    if(!username||!password){
+        return res.status(400).json({message:'username or password not detected'});
+    }
+    try {
+        const admin = await adminModel.findOne({username}).lean();
+        if(!admin){
+            return res.status(404).json({message:'admin not found'});
+        }
+        if(admin.password!==password){
+            return res.status(400).json({message:'incorrect credentials/password'});
+        }
+        const token = jwt.sign({id:admin._id.toString()},jwt_secret,{expiresIn:'1d'});
+        return res.status(201).json({message:'user signin successful',token});
+    } catch (error) {
+        return res.status(500).json({message:'unknown error while signin in the admin',error:error.message});
+    }
 })
 
 router.post('/courses',adminAuthMiddleware,async (req,res)=>{

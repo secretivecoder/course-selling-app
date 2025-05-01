@@ -1,29 +1,35 @@
-// // Middleware for handling auth
-// function adminMiddleware(req, res, next) {
-//     // Implement admin auth logic
-//     // You need to check the headers and validate the admin from the admin DB. Check readme for the exact headers to be expected
-// }
 
-// module.exports = adminMiddleware;
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 const {adminModel} = require('../db');
 
+const jwt_secret = process.env.JWT_SECRET;
 
 const adminAuthMiddleware = async(req,res,next)=>{
-    const {username,password} = req.headers;
-    if(!username||!password){
-        return res.status(400).json({message:'credentials missing'});
+    if(!req.headers.authorization){
+        return res.status(404).json({message:'authorization field not found in headers'});
+    }
+    const token = req.headers.authorization.split(' ')[1];
+    if(!token){
+        return res.status(404).json({message:'token not found'});
     }
     try {
-        const admin = await adminModel.findOne({username});
-        if(!admin){
-            return res.status(404).json({message:'admin not found in db'});
-        }
-        if(admin.password!==password){
-            return res.status(403).json({message:'password is incorrect for the current admin'});
-        }
+        const result = jwt.verify(token,jwt_secret);
+        req.id = result.id;
     } catch (error) {
-        return res.status(500).json({message:'unknown error while authenticating admin'});
+        return res.status(400).json({message:'invalid token',error:error.message});
+    }
+    try {
+        const admin = await adminModel.findOne({_id:req.id});
+        if(!admin){
+            return res.status(404).json({message:'admin not found in db'}); // incase when admin is removed but the token is valid for some time.
+        }
+        // if(admin.password!==password){  not needed as if the token exists means the user did sign up.
+        //     return res.status(403).json({message:'password is incorrect for the current admin'});
+        // }
+    } catch (error) {
+        return res.status(500).json({message:'unknown error while authenticating admin',error:error.message});
     }
     next();
 }
